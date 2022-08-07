@@ -19,6 +19,7 @@ int main(int argc, char * argv[])
   rclcpp::executors::MultiThreadedExecutor exec;
 
   rclcpp::NodeOptions argus_monocular_options;
+  argus_monocular_options.use_intra_process_comms(true);
   argus_monocular_options.arguments(
   {
     "--ros-args",

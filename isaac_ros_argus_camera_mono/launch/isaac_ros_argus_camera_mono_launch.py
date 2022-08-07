@@ -18,17 +18,9 @@ def generate_launch_description():
             parameters=[{
                 'sensor': 0,
                 'device': 0,
-                'output_encoding': 'rgb8'
-            }]
-        ),
-        Node(
-            package='image_view',
-            executable='image_saver',
-            remappings=[
-                ('/image', '/image_raw')
-            ],
-            parameters=[{
-                'filename_format': 'image.jpg'
+                'output_encoding': 'rgb8',
+                'width': 960,
+                'height': 640
             }]
         )
     ])

@@ -46,7 +46,7 @@
 #include "sensor_msgs/image_encodings.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "sensor_msgs/msg/image.hpp"
-
+#include "rclcpp/qos.hpp"
 // Ignore warnings in system library headers
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -203,11 +203,17 @@ private:
       uint64_t frame_id = 0;
 
       RCLCPP_INFO(node_->get_logger(), "Consumer Running");
+    
+
+
       while (rclcpp::ok()) {
         Argus::Status status = Argus::STATUS_OK;
         Argus::Buffer * buf_ptr;
+        // auto start = node_->now();
         buf_ptr = buffer_stream->acquireBuffer(Argus::TIMEOUT_INFINITE, &status);
+        // auto end = node_->now();
 
+        // RCLCPP_INFO(node_->get_logger(), "acquireBuffer: %ld", (end-start).nanoseconds());
         if (status == Argus::STATUS_END_OF_STREAM) {
           return true;
         }
@@ -220,9 +226,11 @@ private:
             "Failed to create IEGLImageBuffer interface\n");
           return false;
         }
+        // auto start2 = node_->now();
 
         EGLImageKHR egl_image = egl_image_buffer->getEGLImage();
-
+        // auto end2 = node_->now();
+        // RCLCPP_INFO(node_->get_logger(), "getEGLImage: %ld", (end2-start2).nanoseconds());
         // Map the encoding desired string to the number of channels needed
         const std::unordered_map<std::string, int> g_str_to_channels({
               {"mono8", CV_8UC1},
@@ -282,6 +290,7 @@ private:
         node_->camerainfo_->header.frame_id = node_->image_->header.frame_id = std::to_string(
           frame_id++);
 
+        //RCLCPP_INFO(node_->get_logger(), "timestamp: %lld", stamp.nanoseconds() );
         if (node_->get_node_options().use_intra_process_comms()) {
           RCLCPP_DEBUG_STREAM(
             node_->get_logger(),
@@ -295,7 +304,7 @@ private:
         vpiImageDestroy(vpi_image_in);
         CHECK_STATUS(vpiImageUnlock(vpi_image_out));
         vpiImageDestroy(vpi_image_out);
-
+ 
         out_mat.release();
       }
 
@@ -311,12 +320,14 @@ private:
     Argus::OutputStream * stream_;
     Argus::IBufferOutputStream * buffer_stream;
   };
-
+  
   if (options.use_intra_process_comms()) {
-    image_pub_ = create_publisher<sensor_msgs::msg::Image>("/image_raw", 20);
-    camera_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>("/camera_info", 20);
+	  RCLCPP_INFO(this->get_logger(), "use_intra_process_comms(): True");
+    image_pub_ = create_publisher<sensor_msgs::msg::Image>("/image_raw", rclcpp::QoS(20).best_effort());
+    camera_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>("/camera_info", rclcpp::QoS(20).best_effort());
   } else {
-    publisher_ = image_transport::create_camera_publisher(this, "/image_raw");
+    	  RCLCPP_INFO(this->get_logger(), "image_transport::create_camera_publisher()");
+	  publisher_ = image_transport::create_camera_publisher(this, "/image_raw");
   }
 
   auto device_descriptor = rcl_interfaces::msg::ParameterDescriptor{};
@@ -340,9 +351,22 @@ private:
   camera_info_url_descriptor.read_only = true;
   this->declare_parameter("camera_info_url", "", camera_info_url_descriptor);
 
+  auto width_descriptor = rcl_interfaces::msg::ParameterDescriptor{};
+  width_descriptor.description = "Resolution X of Image";
+  width_descriptor.read_only = false;
+  this->declare_parameter("width", 1928, width_descriptor);
+
+  auto height_descriptor = rcl_interfaces::msg::ParameterDescriptor{};
+  height_descriptor.description = "Height size of Image";
+  height_descriptor.read_only = false;
+  this->declare_parameter("height", 1208, height_descriptor);
+
   // Set up Argus API Framework, identify available camera devices, and create a capture session for
   // the selected device and sensor mode
-  uint32_t device_index, sensor_index, dvc_idx = 0, snsr_idx;
+  uint32_t device_index, sensor_index, dvc_idx = 0, snsr_idx, width, height;
+
+  this->get_parameter("width", width);
+  this->get_parameter("height", height);
 
   Argus::UniqueObj<Argus::CameraProvider> cameraProvider(Argus::CameraProvider::create());
   Argus::ICameraProvider * camera_provider = Argus::interface_cast<Argus::ICameraProvider>(
@@ -498,11 +522,14 @@ private:
     return;
   }
 
+  // Argus::Size2D<uint32_t> size =
+  //   Argus::Size2D<uint32_t>(
+  //   (i_sensor_mode->getResolution()).width(),
+  //   (i_sensor_mode->getResolution()).height() );
   Argus::Size2D<uint32_t> size =
     Argus::Size2D<uint32_t>(
-    (i_sensor_mode->getResolution()).width(),
-    (i_sensor_mode->getResolution()).height() );
-
+    width,
+    height );
   EGLint major, minor;
   EGLDisplay egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
   eglInitialize(egl_display, &major, &minor);
@@ -584,8 +611,10 @@ private:
   }
 
   source_settings->setSensorMode(sensor_mode);
-  width_ = (i_sensor_mode->getResolution()).width();
-  height_ = (i_sensor_mode->getResolution()).height();
+  width_ = width;
+  height_ = height;
+  // width_ = (i_sensor_mode->getResolution()).width();
+  // height_ = (i_sensor_mode->getResolution()).height();
   MonocularConsumerThread * mono_consumer_thread = new MonocularConsumerThread(
     this,
     output_stream.get());
