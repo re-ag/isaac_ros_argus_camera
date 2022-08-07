@@ -34,63 +34,42 @@ Configure `nvidia-container-runtime` as the default runtime for Docker by editin
 ```
 and then restarting Docker: `sudo systemctl daemon-reload && sudo systemctl restart docker`
 
-Run the following script in `isaac_ros_common` to build the image and launch the container:
-
-`$ scripts/run_dev.sh <optional path>`
-
-You can either provide an optional path to mirror in your host ROS workspace with Isaac ROS packages, which will be made available in the container as `/workspaces/isaac_ros-dev`, or you can setup a new workspace in the container.
-
-### Reference Camera
-The [Leopard Imaging](https://www.leopardimaging.com/product/) NVIDIA camera partner provides the below camera modules, which are compliant with the `isaac_ros_argus_camera` packages.
-
-
-| Product Name | Type                | Resolution  |
-| ------------ | ------------------- | ----------- |
-| HAWK         | Stereo Camera       | 1920 x 1200 |
-| OWL          | Fisheye Camera      | 1920 x 1200 |
-| IMX477       | 4K Monocular Camera | 4056 x 3040 |
-
 ## Quickstart
 1. Create a ROS2 workspace if one is not already prepared:  
 `mkdir -p your_ws/src`  
 **Note:** The workspace can have any name; this guide assumes you name it `your_ws`.
 
-2. Clone the Isaac ROS Argus Camera repository to `your_ws/src/isaac_ros_argus_camera`. Check that you have [Git LFS](https://git-lfs.github.com/) installed before cloning to pull down all large files.  
-`sudo apt-get install git-lfs`  
-`cd your_ws/src && git clone https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_argus_camera`
+2. Before cloning Argus camera repository, Clone [Isaac ROS Common](https://github.com/re-ag/isaac_ros_common.git).  Check that you have [Git LFS](https://git-lfs.github.com/) installed before cloning to pull down all large files.
+
+      `sudo apt-get install git-lfs`  
+      `git clone -b release-ea2.1 https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_common`
+
+      `cd your_ws/src/isaac_ros_common && git lfs pull`
+
+      `cd your_ws/src && git clone -b release-ea2.1 https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_argus_camera`
 
 3. Build and source the workspace:  
 `cd your_ws && colcon build --symlink-install && source install/setup.bash`
 
-4. (Optional) Run tests to verify complete and correct installation:  
-`colcon test`
-
-5. Launch the node:  
-`ros2 run isaac_ros_argus_camera_mono isaac_ros_argus_camera_mono --ros-args -p device:=0 -p sensor:=0 -p output_encoding:="mono8"`
+4. Launch the node:  
+`ros2 launch isaac_ros_argus_camera_mono isaac_ros_argus_camera_mono_launch.py`
 
 
 ## Package Reference
 ### isaac_ros_argus_camera_mono
 
-`ros2 run isaac_ros_argus_camera_mono isaac_ros_argus_camera_mono --ros-args -p device:=<device_index> -p sensor:=<sensor_index> -p output_encoding:=<encoding_string>`
+`ros2 run isaac_ros_argus_camera_mono isaac_ros_argus_camera_mono --ros-args -p device:=<device_index> -p sensor:=<sensor_index> -p output_encoding:=<encoding_string> -p width:=<width_size> -p height:=<height_size>`
   
 | ROS Argument      | Usage                                                                  |
 | ----------------- | ---------------------------------------------------------------------- |
 | `device_index`    | The video node index (e.g. `/dev/video0`)                              |
 | `sensor_index`    | The sensor mode supported by the camera sensor and driver              |
+| `width` | The width size of image (pixel) |
+| `height` | The height size of image (pixel) |
 | `output_encoding` | The output image format.  `mono8 ` and `rgb8 ` are currently supported |
 | `camera_info_url` | URL for camera info YAML file which overrides Argus Ext calibration parameter if specified (e.g. `file:///home/admin/.ros/camera_info/camerav2.yml`) |
 
 
-### isaac_ros_argus_camera_stereo
-
-   `ros2 run isaac_ros_argus_camera_stereo isaac_ros_argus_camera_stereo --ros-args -p device:=<device_index> -p sensor:=<sensor_index> -p output_encoding:=<encoding_string>`
-
-| ROS Argument      | Usage                                                                 |
-| ----------------- | --------------------------------------------------------------------- |
-| `device_index`    | The first video node index (e.g. `/dev/video0`)                       |
-| `sensor_index`    | The sensor mode supported in the camera sensor and driver             |
-| `output_encoding` | The output image format. `mono8 ` and `rgb8 ` are currently supported |
 
 **Note**: To run the stereo node, two video nodes should present for left and right sensors, respectively (e.g. `/dev/video0` and `/dev/video1`).
 
