@@ -209,11 +209,8 @@ private:
       while (rclcpp::ok()) {
         Argus::Status status = Argus::STATUS_OK;
         Argus::Buffer * buf_ptr;
-        // auto start = node_->now();
         buf_ptr = buffer_stream->acquireBuffer(Argus::TIMEOUT_INFINITE, &status);
-        // auto end = node_->now();
-
-        // RCLCPP_INFO(node_->get_logger(), "acquireBuffer: %ld", (end-start).nanoseconds());
+        
         if (status == Argus::STATUS_END_OF_STREAM) {
           return true;
         }
@@ -226,11 +223,8 @@ private:
             "Failed to create IEGLImageBuffer interface\n");
           return false;
         }
-        // auto start2 = node_->now();
 
         EGLImageKHR egl_image = egl_image_buffer->getEGLImage();
-        // auto end2 = node_->now();
-        // RCLCPP_INFO(node_->get_logger(), "getEGLImage: %ld", (end2-start2).nanoseconds());
         // Map the encoding desired string to the number of channels needed
         const std::unordered_map<std::string, int> g_str_to_channels({
               {"mono8", CV_8UC1},
@@ -240,12 +234,10 @@ private:
               {"bgra8", CV_8UC4},
               {"rgba8", CV_8UC4}});
 
-        std::string encoding;
-        node_->get_parameter("output_encoding", encoding);
         VPIImageFormat vpi_image_format;
-        if (encoding == static_cast<std::string>("mono8")) {
+        if (node_->encoding_ == static_cast<std::string>("mono8")) {
           vpi_image_format = VPI_IMAGE_FORMAT_U8;
-        } else if (encoding == static_cast<std::string>("rgb8")) {
+        } else if (node_->encoding_ == static_cast<std::string>("rgb8")) {
           vpi_image_format = VPI_IMAGE_FORMAT_RGB8;
         }
 
@@ -275,14 +267,14 @@ private:
         VPIImageData out_data;
         vpiImageLock(vpi_image_out, VPI_LOCK_READ, &out_data);
         cv::Mat out_mat{out_data.planes[0].height, out_data.planes[0].width,
-          g_str_to_channels.at(encoding), out_data.planes[0].data,
+          g_str_to_channels.at(node_->encoding_), out_data.planes[0].data,
           static_cast<size_t>(out_data.planes[0].pitchBytes)};
 
         buffer_stream->releaseBuffer(buf_ptr);
 
         cv_bridge::CvImage cv_img;
         cv_img.image = out_mat;
-        cv_img.encoding = encoding;
+        cv_img.encoding = node_->encoding_;
         cv_img.toImageMsg(*(node_->image_));
 
         auto stamp = node_->now();
@@ -322,7 +314,7 @@ private:
   };
   
   if (options.use_intra_process_comms()) {
-	  RCLCPP_INFO(this->get_logger(), "use_intra_process_comms(): True");
+	  RCLCPP_INFO(this->get_logger(), "use_intra_process_comms: True");
     image_pub_ = create_publisher<sensor_msgs::msg::Image>("/image_raw", rclcpp::QoS(20).best_effort());
     camera_pub_ = create_publisher<sensor_msgs::msg::CameraInfo>("/camera_info", rclcpp::QoS(20).best_effort());
   } else {
@@ -352,22 +344,25 @@ private:
   this->declare_parameter("camera_info_url", "", camera_info_url_descriptor);
 
   auto width_descriptor = rcl_interfaces::msg::ParameterDescriptor{};
-  width_descriptor.description = "Resolution X of Image";
+  width_descriptor.description = "Width size of image";
   width_descriptor.read_only = false;
   this->declare_parameter("width", 1928, width_descriptor);
 
   auto height_descriptor = rcl_interfaces::msg::ParameterDescriptor{};
-  height_descriptor.description = "Height size of Image";
+  height_descriptor.description = "Height size of image";
   height_descriptor.read_only = false;
   this->declare_parameter("height", 1208, height_descriptor);
 
   // Set up Argus API Framework, identify available camera devices, and create a capture session for
   // the selected device and sensor mode
   uint32_t device_index, sensor_index, dvc_idx = 0, snsr_idx, width, height;
+  std::string encoding;
 
   this->get_parameter("width", width);
   this->get_parameter("height", height);
-
+  this->get_parameter("output_encoding", encoding);
+  RCLCPP_INFO(this->get_logger(), "Output encoding = %s\n", encoding.c_str());
+  RCLCPP_INFO(this->get_logger(), "Width x Height = %d x %d\n", width, height);
   Argus::UniqueObj<Argus::CameraProvider> cameraProvider(Argus::CameraProvider::create());
   Argus::ICameraProvider * camera_provider = Argus::interface_cast<Argus::ICameraProvider>(
     cameraProvider);
@@ -375,7 +370,7 @@ private:
     RCLCPP_ERROR(this->get_logger(), "Cannot get core camera provider interface\n");
     return;
   }
-  RCLCPP_INFO(this->get_logger(), "Argus Version: %s\n", camera_provider->getVersion().c_str());
+  // RCLCPP_INFO(this->get_logger(), "Argus Version: %s\n", camera_provider->getVersion().c_str());
 
   // Get camera devices vector and display available camera device models
   std::vector<Argus::CameraDevice *> camera_devices;
@@ -385,13 +380,13 @@ private:
     return;
   }
 
-  RCLCPP_INFO(this->get_logger(), "Set the camera model using the node parameter \"device\"");
-  RCLCPP_INFO(this->get_logger(), "Set the sensor mode using the node parameter \"sensor\"");
-  RCLCPP_INFO(
-    this->get_logger(),
-    "Set the output image format using the node parameter \"output_encoding\". "
-    "Supported encodings: \"mono8\" and \"rgb8\"\n");
-  RCLCPP_INFO(this->get_logger(), "Following camera model indices are available:");
+  // RCLCPP_INFO(this->get_logger(), "Set the camera model using the node parameter \"device\"");
+  // RCLCPP_INFO(this->get_logger(), "Set the sensor mode using the node parameter \"sensor\"");
+  // RCLCPP_INFO(
+  //   this->get_logger(),
+  //   "Set the output image format using the node parameter \"output_encoding\". "
+  //   "Supported encodings: \"mono8\" and \"rgb8\"\n");
+  // RCLCPP_INFO(this->get_logger(), "Following camera model indices are available:");
 
   Argus::ICameraProperties * properties;
   std::string model_string;
@@ -401,9 +396,9 @@ private:
   for (auto dvc : camera_devices) {
     properties = Argus::interface_cast<Argus::ICameraProperties>(dvc);
     model_string = properties->getModuleString();
-    RCLCPP_INFO(this->get_logger(), "");
-    RCLCPP_INFO(this->get_logger(), "%d %s", dvc_idx++, model_string.c_str());
-    RCLCPP_INFO(this->get_logger(), "Sensor modes supported for this camera device:");
+    // RCLCPP_INFO(this->get_logger(), "");
+    // RCLCPP_INFO(this->get_logger(), "%d %s", dvc_idx++, model_string.c_str());
+    // RCLCPP_INFO(this->get_logger(), "Sensor modes supported for this camera device:");
     status = properties->getAllSensorModes(&sensor_modes);
     if (status != Argus::STATUS_OK) {
       RCLCPP_ERROR(this->get_logger(), "Failed to get sensor modes vector");
@@ -413,7 +408,7 @@ private:
     for (auto snsr : sensor_modes) {
       sensor_properties = Argus::interface_cast<Argus::ISensorMode>(snsr);
       res = sensor_properties->getResolution();
-      RCLCPP_INFO(this->get_logger(), "%d (%d x %d)", snsr_idx++, res.width(), res.height());
+      // RCLCPP_INFO(this->get_logger(), "%d (%d x %d)", snsr_idx++, res.width(), res.height());
     }
   }
 
@@ -435,12 +430,10 @@ private:
     RCLCPP_ERROR(this->get_logger(), "Failed to get sensor mode interface");
     return;
   }
-  RCLCPP_INFO(this->get_logger(), "");
+  
   RCLCPP_INFO(
-    this->get_logger(), "Capturing from device %d using sensor mode %d (%dx%d)",
-    device_index, sensor_index,
-    i_sensor_mode->getResolution().width(),
-    i_sensor_mode->getResolution().height());
+    this->get_logger(), "Capturing from device %d using sensor mode %d ",
+    device_index, sensor_index);
 
   image_ = sensor_msgs::msg::Image::SharedPtr(new sensor_msgs::msg::Image());
 
@@ -585,9 +578,6 @@ private:
     }
   }
 
-  std::string encoding;
-  this->get_parameter("output_encoding", encoding);
-
   Argus::UniqueObj<Argus::Request> request(iSession->createRequest());
   Argus::IRequest * i_request = Argus::interface_cast<Argus::IRequest>(request);
   if (!i_request) {
@@ -613,8 +603,8 @@ private:
   source_settings->setSensorMode(sensor_mode);
   width_ = width;
   height_ = height;
-  // width_ = (i_sensor_mode->getResolution()).width();
-  // height_ = (i_sensor_mode->getResolution()).height();
+  encoding_ = encoding;
+  
   MonocularConsumerThread * mono_consumer_thread = new MonocularConsumerThread(
     this,
     output_stream.get());

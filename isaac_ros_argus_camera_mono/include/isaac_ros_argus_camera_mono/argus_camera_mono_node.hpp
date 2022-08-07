@@ -44,6 +44,7 @@ private:
 
   uint32_t width_;
   uint32_t height_;
+  std::string encoding_;
 };
 
 }  // namespace argus
